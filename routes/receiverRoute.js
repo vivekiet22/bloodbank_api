@@ -6,6 +6,6 @@ const receiverController = require("../controller/receiverController")
 router.post("/register", receiverController.register);
 router.post("/login", receiverController.login);
 
-router.post("/request",receiverController.request)
+router.post("/request",receiverController.protect,receiverController.request)
 
 module.exports = router;

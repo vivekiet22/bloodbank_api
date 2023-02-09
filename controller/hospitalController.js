@@ -3,6 +3,25 @@ const jwt = require("jsonwebtoken");
 
 const Hospital = require("../models/Hospitals");
 
+// 
+// Protect from non-logged user
+exports.protect = async (req, res, next) => {
+  const token = req.header("x-auth-token");
+
+  if (!token) {
+    return res.status(401).json({ msg: "Authorization denied" });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded.id;
+    next();
+  } catch (err) {
+    console.log(err.message);
+    res.status(401).json({ msg: err.message });
+  }
+};
+
 // register
 exports.register = async (req, res) => {
   const { name, email, password, address } = req.body;
@@ -14,7 +33,7 @@ exports.register = async (req, res) => {
         .json({ status: "error", msg: "Receiver already Exsit" });
     }
     hospital = await Hospital.create({ name, email, password, address });
-    const token = jwt.sign({ id: hospital.id }, process.env.JWT_SECRET, {
+    const token = jwt.sign({ id: hospital.email }, process.env.JWT_SECRET, {
       expiresIn: 3600,
     });
     res.status(201).json({ status: "success", data: { hospital, token } });
@@ -32,7 +51,7 @@ exports.login = async (req, res) => {
     const hospital = await Hospital.findOne({ email }).select("+password");
 
     if (hospital && (await bcrypt.compare(password, hospital.password))) {
-      const token = jwt.sign({ id: hospital.id }, process.env.JWT_SECRET, {
+      const token = jwt.sign({ id: hospital.email }, process.env.JWT_SECRET, {
         expiresIn: 3600,
       });
       res.status(200).json({ status: "success", data: { token } });
@@ -45,11 +64,11 @@ exports.login = async (req, res) => {
 };
 
 exports.delete = async (req, res) => {
-  const { email, bloodtype } = req.body;
+  const { bloodtype } = req.body;
   try {
     console.log("started");
 
-    let hos = await Hospital.findOne({ email });
+    let hos = await Hospital.findOne({ email:req.user });
     let samples = await hos.bloodSamples;
     let sampleUpdated = await samples.filter(
       (blood) => blood.bloodGroup !== bloodtype
@@ -57,7 +76,7 @@ exports.delete = async (req, res) => {
     console.log(sampleUpdated);
     let update = await { bloodSamples: sampleUpdated };
 
-    let doc = await Hospital.findOneAndUpdate({ email }, update);
+    let doc = await Hospital.findOneAndUpdate({ email:req.user }, update);
     await doc.save();
     res.status(201).json({ status: "success", msg: "deleted" });
   } catch (err) {
@@ -67,9 +86,9 @@ exports.delete = async (req, res) => {
 };
 
 exports.update = async (req, res) => {
-  const { email, bloodGroup, quantity } = req.body;
+  const { bloodGroup, quantity } = req.body;
   try {
-    let filter = { email };
+    let filter = { email:req.user };
     let user = await Hospital.findOne(filter);
     let bloodSamples = await user.bloodSamples;
 
@@ -93,8 +112,8 @@ exports.update = async (req, res) => {
 
 // getall blood info
 exports.getblood = async (req, res) => {
-  const { email } = req.body;
-  let hospital = await Hospital.findOne({ email });
+ 
+  let hospital = await Hospital.findOne({email:req.user});
   try {
     let samples = await hospital.bloodSamples;
     await res.send(samples);
@@ -105,11 +124,17 @@ exports.getblood = async (req, res) => {
 };
 // getall receivers info
 exports.getreceiver = async (req, res) => {
-  const { email, bloodtype } = req.body;
-  let hospital = await Hospital.findOne({ email });
+  const { bloodtype } = req.body;
+  let hospital = await Hospital.findOne({ email:req.user });
   try {
-    let samples = await hospital.requests.bloodtype;
-    await res.send(samples);
+    // let samples = await hospital.requests;
+    let allBloodReceivers = []
+    for await(const data of hospital.requests){
+      if (data.bloodGroup===bloodtype){
+      allBloodReceivers = [...allBloodReceivers,data]
+    }  
+    }
+    await res.send(allBloodReceivers);
   } catch (err) {
     console.log(err.message);
     res.status(400).json({ status: "error", msg: err.message });

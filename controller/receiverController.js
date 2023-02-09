@@ -5,6 +5,26 @@ const Receiver = require("../models/Receiver")
 
 const Hospitals = require("../models/Hospitals")
 
+// Protect from non-logged user
+exports.protect = async (req, res, next) => {
+  const token = req.header("x-auth-token");
+
+  if (!token) {
+    return res.status(401).json({ msg: "Authorization denied" });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded.id;
+    next();
+  } catch (err) {
+    console.log(err.message);
+    res.status(401).json({ msg: err.message });
+  }
+};
+
+
+
 // register
 exports.register = async (req,res) =>{
     const {name,email,password,address,bloodGroup} = req.body;
@@ -14,7 +34,7 @@ exports.register = async (req,res) =>{
             return res.status(400).json({status:'error',msg:"Receiver already Exsit"})
         }
         receiver = await Receiver.create({name,email,password,address,bloodGroup})
-        const token = jwt.sign({ id: receiver.id }, process.env.JWT_SECRET, {
+        const token = jwt.sign({ id: receiver.email }, process.env.JWT_SECRET, {
             expiresIn: 3600
           });
           res.status(201).json({ status: "success", data: { receiver, token } });
@@ -32,7 +52,7 @@ exports.login = async (req, res) => {
       const receiver = await Receiver.findOne({ email }).select("+password");
   
       if (receiver && (await bcrypt.compare(password, receiver.password))) {
-        const token = jwt.sign({ id: receiver.id }, process.env.JWT_SECRET, {
+        const token = jwt.sign({ id: receiver.email }, process.env.JWT_SECRET, {
           expiresIn: 3600
         });
         res.status(200).json({ status: "success", data: { token } });
@@ -45,7 +65,8 @@ exports.login = async (req, res) => {
   };
 
   exports.request = async (req,res)=>{
-    const {hospital,quantity,receiverEmail,hospitalEmail} = req.body
+    const receiverEmail = req.user
+    const {hospital,quantity,hospitalEmail} = req.body
     try{
         console.log("started")
         let filter = {email:receiverEmail}
@@ -63,6 +84,7 @@ exports.login = async (req, res) => {
         let filter1 = {email:hospitalEmail}
         let hospitals = await Hospitals.findOne(filter1)
         let hospirequests = await hospitals.requests
+        console.log(hospirequests)
         let bGroup = await user.bloodGroup
         let update1 = await {requests:[...hospirequests,{ 
           bloodGroup:bGroup,
@@ -74,7 +96,7 @@ exports.login = async (req, res) => {
           upsert: true // Make this update into an upsert
         })
       await doc1.save()
-        res.status(201).json({ status: "success", msg:"created" });
+        res.status(201).json({ status: "success", msg:"created",hospirequests });
     }
     catch(err) {
         console.log("failed")
